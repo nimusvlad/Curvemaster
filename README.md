@@ -10,6 +10,23 @@ raymarching signed distance functions in a fragment shader. Written in Rust with
 cargo run --release
 ```
 
+### Windows .exe (cross-compiled from Linux)
+
+```bash
+rustup target add x86_64-pc-windows-gnu
+```
+
+```bash
+sudo apt-get install gcc-mingw-w64-x86-64
+```
+
+```bash
+cargo build --release --target x86_64-pc-windows-gnu
+```
+
+The result is `target/x86_64-pc-windows-gnu/release/curvemaster.exe`, a single
+self-contained file that only depends on DLLs that ship with Windows.
+
 ## Controls
 
 | Input | Action |

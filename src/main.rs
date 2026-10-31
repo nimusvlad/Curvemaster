@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 //! Curvemaster — a raymarched shooter in infinite H3 hyperbolic space.
 //!
 //! Controls: WASD move, mouse look, Q/E roll, Space/Ctrl up/down,
