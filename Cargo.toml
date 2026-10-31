@@ -1,0 +1,15 @@
+[package]
+name = "curvemaster"
+version = "0.1.0"
+edition = "2021"
+description = "A raymarched shooter set in infinite H3 hyperbolic space"
+license = "MIT"
+
+[dependencies]
+macroquad = "0.4"
+
+[profile.dev]
+opt-level = 2
+
+[profile.release]
+opt-level = 3
