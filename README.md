@@ -1,7 +1,8 @@
 # Curvemaster
 
-A first-person shooter in **infinite hyperbolic 3-space (H³)**, rendered entirely by
-raymarching signed distance functions in a fragment shader. Written in Rust with
+A first-person shooter in **curved 3-space** (hyperbolic H³, flat E³ or
+spherical S³), rendered entirely by raymarching signed distance functions in
+a generated fragment shader. Written in Rust with
 [macroquad](https://github.com/not-fl3/macroquad).
 
 ## Run
@@ -37,7 +38,7 @@ self-contained file that only depends on DLLs that ship with Windows.
 | Mouse | look (free 6-DOF, no fixed "up") |
 | Q / E | roll |
 | Left mouse | shoot (click also captures the mouse) |
-| Esc | release the mouse |
+| Esc | open the menu (resume, change space, new game) |
 | `[` / `]` | lower / raise the render resolution |
 | R | restart after dying |
 
@@ -45,40 +46,63 @@ Red spheres drift around until they get a clear line of sight to you; then
 their eye opens and they fly straight at you along the connecting geodesic.
 Touching one costs 20 health. Shoot them first.
 
+## Main menu
+
+* **Space**: Hyperbolic H3, Euclidean E3, or Spherical S3.
+* **Grid cells**: the honeycomb that fills space.
+  * H3: right-angled dodecahedra `{5,3,4}` and the larger right-angled
+    Löbell polyhedra L6, L7, L8 (14–18 faces). Infinite.
+  * E3: cubes `{4,3,4}`. Infinite.
+  * S3: the six regular 4-polytopes, from the 5-cell (5 tetrahedra) up to the
+    600-cell (600 tetrahedra). The world is finite: walk far enough in a
+    straight line and you come back from behind. Objects near the
+    antipodal point look magnified.
+* **Curvature radius R** / **Cell size**: in curved space a regular grid's
+  cell size is fixed relative to the curvature radius. The two settings
+  are linked, and choosing a different grid gives a different ratio. In E3 the
+  cube size is free.
+
+Esc during play opens the menu (Resume / New game).
+
 ## How it works
 
-**Model.** Points are 4-vectors on the hyperboloid `x²+y²+z²−w² = −1` with the
-Minkowski form. The player is a Lorentz frame (right, up, forward, position);
-movement is a boost, looking is a rotation. Rays, projectiles and enemies all
-follow geodesics `p(t) = cosh t·p + sinh t·v`.
+**Unified model.** With curvature sign `k ∈ {-1, 0, +1}` points are
+4-vectors on `x²+y²+z²+k·w² = k` (H3 hyperboloid, S3 unit sphere) or
+`(x,y,z,1)` (E3). Geodesics are `p(t) = C(t)·p + S(t)·v` with
+`(C,S) = (cosh,sinh) | (1,t) | (cos,sin)`. The player is an orthonormal frame,
+movement is a boost/translation/rotation along a geodesic, and look/roll are
+rotations. Internal lengths are measured in units of R, and gameplay sizes and
+speeds are in world units, so changing R really changes how curved the space
+feels.
 
-**The world** is the right-angled dodecahedral honeycomb `{5,3,4}`: regular
-dodecahedra with 90° dihedral angles, eight around each vertex. Because the
-angles are right angles, the 12 face reflections of one cell form a Coxeter
-group with that cell as a strict fundamental domain, so:
+**Folding.** Every face plane of a honeycomb cell is a mirror of the
+honeycomb. The raymarcher keeps the ray inside the central cell and
+reflects the ray's position and direction across any face it crosses. Physics
+folds points the same way, and when the player leaves the central cell the
+whole world is reflected back. Coordinates therefore never blow up, even in
+infinite H3.
 
-* the raymarcher keeps the ray inside the central cell, reflecting ray position
-  and direction across whichever face it crosses. Coordinates stay small no
-  matter how far the ray goes;
-* each cell gets a well-defined 12-bit **label** (the parity of reflections per
-  face), which seeds the procedural content: per-face plates (open, solid, or
-  pierced by a round hole; seeded so both cells sharing a face agree), a
-  coloured lamp, and an optional glowing orb at the centre. Edges carry beams
-  and vertices carry nodes;
-* when the player leaves the central cell the whole world (player, enemies,
-  projectiles) is reflected back and the global label is updated, so the
-  world is unbounded but numbers never blow up.
+**Cell identity** (the procedural seed for walls and orbs) has to stay the same
+no matter which reflections reached the cell:
 
-All distances are true hyperbolic distances: `asinh⟨n,p⟩` to a plane,
-`asinh√(s_i²+s_j²)` to an edge (intersection of orthogonal planes),
-`acosh(−⟨p,c⟩)` to a point. Enemies and projectiles are intersected
-analytically with the geodesic ray (a quadratic in `eᵗ`).
+* *Right-angled H3 cells*: the face reflections generate a right-angled
+  Coxeter group with the cell as strict fundamental domain, so the per-face
+  parity of reflections is a well-defined label.
+* *E3 and S3*: the shader tracks the matrix from local to absolute
+  coordinates (a rank-one update per reflection) and quantises the cell's
+  absolute centre. For S3, the CPU enumerates every cell of the finite world
+  and picks a quantisation that keeps every centre clear of rounding
+  boundaries by about 100× the f32 error, so GPU and CPU always agree.
+
+Each face is seeded by its own shared identity, so both neighbours agree on
+whether it is open, solid or holed. Edge beams use the exact distance to the
+intersection line of two planes, `S(d)² = (sᵢ² − 2g·sᵢsⱼ + sⱼ²)/(1−g²)`.
+Enemies and shots are intersected analytically with the geodesic ray.
 
 **One SDF, two places.** `src/world.rs` evaluates the scene on the CPU in f64
-for collisions, line-of-sight and spawning. `src/shader.rs` generates the
-matching GLSL 1.00 (normals, edges and vertices unrolled from the same Rust
-data), and the cell hash uses only exact small-integer float arithmetic, so the
-GPU and CPU agree on which walls exist.
+for collisions, line of sight and spawning. `src/shader.rs` generates the
+matching GLSL 1.00 from the same cell data, and hashing uses only exact
+small-integer float arithmetic.
 
 ## Tests
 
@@ -86,9 +110,12 @@ GPU and CPU agree on which walls exist.
 cargo test
 ```
 
-Covers frame/geodesic maths, the honeycomb's right angles, path-independent cell
-labels, shared-face agreement, projectile/wall and projectile/enemy collisions,
-enemy chasing, and walls blocking sight.
+Runs for every geometry and grid: geodesic and frame maths, cell combinatorics
+(including that the S3 tilings close up with 5/8/16/24/120/600 cells),
+path-independent cell labels, shared-face agreement, projectile/wall and
+projectile/enemy collisions, enemy chasing, walls blocking sight, and long
+walks staying numerically sane.
 
-Set `CURVEMASTER_SHOT=out.png` to run a short scripted fly-through and save a
-screenshot (handy under `xvfb-run`).
+Set `CURVEMASTER_SHOT=out.png` (optionally with `CURVEMASTER_SPACE=h|e|s`,
+`CURVEMASTER_TILING=<n>`, `CURVEMASTER_R=<radius>`) to run a short scripted
+fly-through and save a screenshot (handy under `xvfb-run`).
